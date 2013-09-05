@@ -15,53 +15,63 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
 {
     const VERSION = '2.0.0';
 
-    private $_connection;
+    private $_connections = array();
     private $_using = Pheanstalk_PheanstalkInterface::DEFAULT_TUBE;
     private $_watching = array(Pheanstalk_PheanstalkInterface::DEFAULT_TUBE => true);
-
+    
     /**
      * @param string $host
      * @param int $port
      * @param int $connectTimeout
      */
-    public function __construct($host, $port = Pheanstalk_PheanstalkInterface::DEFAULT_PORT, $connectTimeout = null)
+    public function __construct()
     {
-        $this->setConnection(new Pheanstalk_Connection($host, $port, $connectTimeout));
     }
 
     /**
      * {@inheritDoc}
      */
-    public function setConnection(Pheanstalk_Connection $connection)
+    public function addConnection(Pheanstalk_Connection $connection)
     {
-        $this->_connection = $connection;
-        return $this;
+        $name = $connection->getHost().':'.$connection->getPort();
+        $this->_connections[$name] = $connection;
+        
+        return $name;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function getConnection()
+    public function getConnections()
     {
-        return $this->_connection;
+        return $this->_connections;
     }
+    
+    public function getConnection($name)
+    {
+        if(isset($this->_connections[$name]))
+            return $this->_connections[$name];
+        else
+            throw new Pheanstalk_Exception('Unknown connection: '.$name);
+    }
+
 
     // ----------------------------------------
 
     /**
      * {@inheritDoc}
      */
-    public function bury($job, $priority = Pheanstalk_PheanstalkInterface::DEFAULT_PRIORITY)
+    public function bury(Pheanstalk_Job $job, $priority = Pheanstalk_PheanstalkInterface::DEFAULT_PRIORITY)
     {
-        $this->_dispatch(new Pheanstalk_Command_BuryCommand($job, $priority));
+        $this->_dispatch(new Pheanstalk_Command_BuryCommand($job, $priority), $job->getConnection());
     }
 
     /**
      * {@inheritDoc}
      */
-    public function delete($job)
+    public function delete(Pheanstalk_Job $job)
     {
-        $this->_dispatch(new Pheanstalk_Command_DeleteCommand($job));
+        $response = $this->_dispatch(new Pheanstalk_Command_DeleteCommand($job), $job->getConnection());
         return $this;
     }
 
@@ -71,8 +81,11 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     public function ignore($tube)
     {
         if (isset($this->_watching[$tube])) {
-            $this->_dispatch(new Pheanstalk_Command_IgnoreCommand($tube));
             unset($this->_watching[$tube]);
+            $connections = $this->getConnections();
+            foreach($connections as $connection) {
+                $this->_dispatch(new Pheanstalk_Command_IgnoreCommand($tube), $connection);
+            }
         }
         return $this;
     }
@@ -82,16 +95,25 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function kick($max)
     {
-        $response = $this->_dispatch(new Pheanstalk_Command_KickCommand($max));
-        return $response['kicked'];
+        $kicked = 0;
+        $connections = $this->getConnections();
+        foreach($connections as $connection) {
+            try {
+                $response = $this->_dispatch(new Pheanstalk_Command_KickCommand($max), $connection);
+                $kicked += $response['kicked'];
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                
+            }
+        }
+        return $kicked;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function kickJob($job)
+    public function kickJob(Pheanstalk_Job $job)
     {
-        $this->_dispatch(new Pheanstalk_Command_KickJobCommand($job));
+        $this->_dispatch(new Pheanstalk_Command_KickJobCommand($job), $job->getConnection());
         return $this;
     }
 
@@ -100,9 +122,18 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function listTubes()
     {
-        return (array) $this->_dispatch(
-            new Pheanstalk_Command_ListTubesCommand()
-        );
+        $list = array();
+        
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                $list[$name] = (array) $this->_dispatch(new Pheanstalk_Command_ListTubesCommand(), $connection);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                
+            }
+        }
+
+        return $list;
     }
 
     /**
@@ -110,14 +141,22 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function listTubesWatched($askServer = false)
     {
-        if ($askServer) {
-            $response = (array) $this->_dispatch(
-                new Pheanstalk_Command_ListTubesWatchedCommand()
-            );
-            $this->_watching = array_fill_keys($response, true);
+        if (!$askServer) {
+            return array_keys($this->_watching);
+        }
+        
+        $list = array();
+        
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                $list[$name] = (array) $this->_dispatch(new Pheanstalk_Command_ListTubesWatchedCommand(), $connection);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                
+            }
         }
 
-        return array_keys($this->_watching);
+        return $list;
     }
 
     /**
@@ -125,14 +164,25 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function listTubeUsed($askServer = false)
     {
-        if ($askServer) {
-            $response = $this->_dispatch(
-                new Pheanstalk_Command_ListTubeUsedCommand()
-            );
-            $this->_using = $response['tube'];
+        if (!$askServer) {
+            return $this->_using;
         }
 
-        return $this->_using;
+        $list = array();
+        
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                $response = $this->_dispatch(new Pheanstalk_Command_ListTubeUsedCommand(), $connection);
+                $list[$name] = $response['tube'];
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                
+            }
+            
+        }
+        
+        return $list;
+
     }
 
     /**
@@ -140,18 +190,63 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function pauseTube($tube, $delay)
     {
-        $this->_dispatch(new Pheanstalk_Command_PauseTubeCommand($tube, $delay));
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                        $this->_dispatch(new Pheanstalk_Command_PauseTubeCommand($tube, $delay), $connection);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                
+            }
+        }
+        
         return $this;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function peek($jobId)
+    public function peek($jobId, $connectionName)
     {
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_PeekCommand($jobId)
-        );
+        $connection = $this->getConnection($connectionName);
+        $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand($jobId), $connection);
+
+        return new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function peekReady($tube = null, $connectionName = null)
+    {
+        if ($tube !== null) {
+            $this->useTube($tube);
+        }
+        
+        if(!is_null($connectionName))
+            $connection = $this->_getConnection();
+        else
+            $connection = $this->getConnection($connectionName);
+
+        $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_READY), $connection);
+
+        return new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function peekDelayed($tube = null, $connectionName = null)
+    {
+        if ($tube !== null) {
+            $this->useTube($tube);
+        }
+
+        if(is_null($connectionName))
+            $connection = $this->_getConnection();
+        else
+            $connection = $this->getConnection($connectionName);
+
+        $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_DELAYED), $connection);
 
         return new Pheanstalk_Job($response['id'], $response['jobdata']);
     }
@@ -159,47 +254,18 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     /**
      * {@inheritDoc}
      */
-    public function peekReady($tube = null)
+    public function peekBuried($tube = null, $connectionName = null)
     {
         if ($tube !== null) {
             $this->useTube($tube);
         }
 
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_READY)
-        );
+        if(is_null($connectionName))
+            $connection = $this->_getConnection();
+        else
+            $connection = $this->getConnection($connectionName);
 
-        return new Pheanstalk_Job($response['id'], $response['jobdata']);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function peekDelayed($tube = null)
-    {
-        if ($tube !== null) {
-            $this->useTube($tube);
-        }
-
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_DELAYED)
-        );
-
-        return new Pheanstalk_Job($response['id'], $response['jobdata']);
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function peekBuried($tube = null)
-    {
-        if ($tube !== null) {
-            $this->useTube($tube);
-        }
-
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_BURIED)
-        );
+        $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_BURIED), $connection);
 
         return new Pheanstalk_Job($response['id'], $response['jobdata']);
     }
@@ -214,9 +280,9 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         $ttr = Pheanstalk_PheanstalkInterface::DEFAULT_TTR
     )
     {
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_PutCommand($data, $priority, $delay, $ttr)
-        );
+        $connection = $this->_getConnection();
+
+        $response = $this->_dispatch(new Pheanstalk_Command_PutCommand($data, $priority, $delay, $ttr), $connection);
 
         return $response['id'];
     }
@@ -241,14 +307,12 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      * {@inheritDoc}
      */
     public function release(
-        $job,
+        Pheanstalk_Job $job,
         $priority = Pheanstalk_PheanstalkInterface::DEFAULT_PRIORITY,
         $delay = Pheanstalk_PheanstalkInterface::DEFAULT_DELAY
     )
     {
-        $this->_dispatch(
-            new Pheanstalk_Command_ReleaseCommand($job, $priority, $delay)
-        );
+        $response = $this->_dispatch(new Pheanstalk_Command_ReleaseCommand($job, $priority, $delay), $job->getConnection());
 
         return $this;
     }
@@ -258,20 +322,81 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function reserve($timeout = null)
     {
-        $response = $this->_dispatch(
-            new Pheanstalk_Command_ReserveCommand($timeout)
-        );
+        if(is_null($timeout))
+            $timeout = PHP_INT_MAX;
+        
+        $jobs = $this->reserveMultiSync(0);
 
+        
+        while(count($jobs) < 1 AND $timeout--) {
+            $jobs = $this->reserveMultiSync(1);
+        }
+        
+        if(count($jobs) < 1)
+            return false;
+            
+        $k = array_rand($jobs);
+        $reservedJob = $jobs[$k];
+        unset($jobs[$k]);
+
+        foreach($jobs as $n => $job) {
+            $this->release($job);
+        }
+        
+        return $reservedJob;
+    }
+    
+    public function reserveMultiSync($timeout)
+    {
+        $command = new Pheanstalk_Command_ReserveCommand($timeout);
+        $sockets = array();
+        $socketsWrite = null;
+        $socketsException = null;
+        
         $falseResponses = array(
             Pheanstalk_Response::RESPONSE_DEADLINE_SOON,
             Pheanstalk_Response::RESPONSE_TIMED_OUT,
         );
+        
+        $responses = [];
 
-        if (in_array($response->getResponseName(), $falseResponses)) {
-            return false;
-        } else {
-            return new Pheanstalk_Job($response['id'], $response['jobdata']);
+        foreach($this->_connections as $name => $connection) {
+            try{
+                $response = $connection->sendCommand($command);
+                $sockets[$name] = $connection->getPhpSocket();
+                
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                if($this->_reconnect($connection)) {
+                    $response = $connection->sendCommand($command);
+                    $sockets[$name] = $connection->getPhpSocket();
+                } else {
+                    $connection->setInactive();
+                }
+            }
         }
+        
+        $jobs = array();
+        while(count($sockets)) {
+            $socketsRead = $sockets;
+            $count = Pheanstalk_Socket_StreamFunctions::instance()->socket_select($socketsRead, $socketsWrite, $socketsException, null);
+            if($count < 1)
+                throw new Pheanstalk_Exception_SocketException('Select returns :'.var_export($count, true));
+            
+            foreach($socketsRead as $name => $phpSocket) {
+                $connection = $this->getConnection($name);
+
+                $response = $connection->readResponse($command);
+
+                unset($sockets[$name]);
+                if (in_array($response->getResponseName(), $falseResponses)) {
+//                    $jobs[$name] = false;
+                } else {
+                    $jobs[] = new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
+                }
+            }
+        }
+        
+        return $jobs;
     }
 
     /**
@@ -286,33 +411,61 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     /**
      * {@inheritDoc}
      */
-    public function statsJob($job)
+    public function statsJob(Pheanstalk_Job $job)
     {
-        return $this->_dispatch(new Pheanstalk_Command_StatsJobCommand($job));
+        return $this->_dispatch(new Pheanstalk_Command_StatsJobCommand($job), $job->getConnection());
     }
 
     /**
      * {@inheritDoc}
      */
-    public function statsTube($tube)
+    public function statsTube($tube, $connectionName = null)
     {
-        return $this->_dispatch(new Pheanstalk_Command_StatsTubeCommand($tube));
+        if(!is_null($connectionName))
+            return $this->_dispatch(new Pheanstalk_Command_StatsTubeCommand($tube), $this->getConnection($connectionName));
+        
+        $stats = array();
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                $stats[$name] = $this->_dispatch(new Pheanstalk_Command_StatsTubeCommand($tube), $connection);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                $stats[$name] = false;
+            }
+        }
+
+        return $stats;
+
     }
 
     /**
      * {@inheritDoc}
      */
-    public function stats()
+    public function stats($connectionName = null)
     {
-        return $this->_dispatch(new Pheanstalk_Command_StatsCommand());
+        if(!is_null($connectionName))
+            return $this->_dispatch(new Pheanstalk_Command_StatsCommand(), $this->getConnection($connectionName));
+
+        $stats = array();
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            try {
+                $stats[$name] = $this->_dispatch(new Pheanstalk_Command_StatsCommand(), $connection);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                $stats[$name] = false;
+            }
+                
+        }
+
+        return $stats;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function touch($job)
+    public function touch(Pheanstalk_Job $job)
     {
-        $this->_dispatch(new Pheanstalk_Command_TouchCommand($job));
+        $this->_dispatch(new Pheanstalk_Command_TouchCommand($job), $job->getConnection());
         return $this;
     }
 
@@ -322,8 +475,15 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     public function useTube($tube)
     {
         if ($this->_using != $tube) {
-            $this->_dispatch(new Pheanstalk_Command_UseCommand($tube));
             $this->_using = $tube;
+            $connections = $this->getConnections();
+            foreach($connections as $name => $connection) {
+                try {
+                    $this->_dispatch(new Pheanstalk_Command_UseCommand($tube), $connection);
+                } catch (Pheanstalk_Exception_SocketException $e) {
+                    
+                }
+            }
         }
         return $this;
     }
@@ -334,8 +494,15 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     public function watch($tube)
     {
         if (!isset($this->_watching[$tube])) {
-            $this->_dispatch(new Pheanstalk_Command_WatchCommand($tube));
             $this->_watching[$tube] = true;
+            $connections = $this->getConnections();
+            foreach($connections as $name => $connection) {
+                try {
+                    $this->_dispatch(new Pheanstalk_Command_WatchCommand($tube), $connection);
+                } catch (Pheanstalk_Exception_SocketException $e) {
+                    
+                }
+            }
         }
         return $this;
     }
@@ -357,6 +524,25 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
 
     // ----------------------------------------
 
+
+    /**
+     * {@inheritDoc}
+     */
+    private function _getConnection()
+    {
+        $keys = array_keys($this->_connections);
+        shuffle($keys);
+//        DebugBreak('1@localhost');
+        foreach($keys as $key) {
+            if($this->_connections[$key]->isActive() AND $this->_connections[$key]->isServiceListening()) {
+                return $this->_connections[$key];
+            }
+        }
+        
+        throw new Pheanstalk_Exception_SocketException('All connections down');
+    }
+
+
     /**
      * Dispatches the specified command to the connection object.
      *
@@ -366,47 +552,44 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      * @param Pheanstalk_Command $command
      * @return Pheanstalk_Response
      */
-    private function _dispatch($command)
+    private function _dispatch(Pheanstalk_Command $command, Pheanstalk_Connection $connection)
     {
         try {
-            $response = $this->_connection->dispatchCommand($command);
+            $response = $connection->dispatchCommand($command);
         } catch (Pheanstalk_Exception_SocketException $e) {
-            $this->_reconnect();
-            $response = $this->_connection->dispatchCommand($command);
+            if($this->_reconnect($connection)) {
+                $response = $connection->dispatchCommand($command);
+            } else {
+                $connection->setInactive();
+                throw $e;
+            }
         }
-
         return $response;
     }
-
+    
     /**
      * Creates a new connection object, based on the existing connection object,
      * and re-establishes the used tube and watchlist.
      */
-    private function _reconnect()
+    private function _reconnect(Pheanstalk_Connection $connection)
     {
-        $new_connection = new Pheanstalk_Connection(
-            $this->_connection->getHost(),
-            $this->_connection->getPort(),
-            $this->_connection->getConnectTimeout()
-        );
-
-        $this->setConnection($new_connection);
+        if(!$connection->reconnect())
+            return false;
 
         if ($this->_using != Pheanstalk_PheanstalkInterface::DEFAULT_TUBE) {
-            $tube = $this->_using;
-            $this->_using = null;
-            $this->useTube($tube);
+            $connection->dispatchCommand(new Pheanstalk_Command_UseCommand($this->_using));
         }
 
         foreach ($this->_watching as $tube => $true) {
             if ($tube != Pheanstalk_PheanstalkInterface::DEFAULT_TUBE) {
-                unset($this->_watching[$tube]);
-                $this->watch($tube);
+                $connection->dispatchCommand(new Pheanstalk_Command_WatchCommand($tube));
             }
         }
 
         if (!isset($this->_watching[Pheanstalk_PheanstalkInterface::DEFAULT_TUBE])) {
-            $this->ignore(Pheanstalk_PheanstalkInterface::DEFAULT_TUBE);
+            $connection->dispatchCommand(new Pheanstalk_Command_IgnoreCommand(Pheanstalk_PheanstalkInterface::DEFAULT_TUBE));
         }
+        
+        return true;
     }
 }

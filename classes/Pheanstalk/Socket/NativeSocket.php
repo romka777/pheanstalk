@@ -38,6 +38,11 @@ class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
         $this->_wrapper()
             ->stream_set_timeout($this->_socket, self::SOCKET_TIMEOUT);
     }
+    
+    public function getSocket()
+    {
+        return $this->_socket;
+    }
 
     /* (non-phpdoc)
      * @see Pheanstalk_Socket::write()
@@ -69,7 +74,7 @@ class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
         $read = 0;
         $parts = array();
 
-        while ($read < $length && !$this->_wrapper()->feof($this->_socket)) {
+        while ($read < $length) {
             $data = $this->_wrapper()
                 ->fread($this->_socket, $length - $read);
 
@@ -89,17 +94,24 @@ class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
      */
     public function getLine($length = null)
     {
+        $data = '';
         do {
-            $data = isset($length) ?
-                $this->_wrapper()->fgets($this->_socket, $length) :
-                $this->_wrapper()->fgets($this->_socket);
+            $buff = isset($length) ? $this->_wrapper()->fgets($this->_socket, $length) : $this->_wrapper()->fgets($this->_socket);
 
-            if ($this->_wrapper()->feof($this->_socket)) {
+            if ($buff === false) {
                 throw new Pheanstalk_Exception_SocketException("Socket closed by server!");
             }
-        } while ($data === false);
+            
+            $data .= $buff;
+            
+        } while (substr($data, 0 - Pheanstalk_Connection::CRLF_LENGTH) != Pheanstalk_Connection::CRLF);
 
         return rtrim($data);
+    }
+    
+    public function close()
+    {
+        return $this->_wrapper()->fclose($this->_socket);
     }
 
     // ----------------------------------------

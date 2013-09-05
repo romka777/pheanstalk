@@ -33,6 +33,8 @@ class Pheanstalk_Connection
     private $_hostname;
     private $_port;
     private $_connectTimeout;
+    
+    private $_isActive = true;
 
     /**
      * @param string $hostname
@@ -61,6 +63,11 @@ class Pheanstalk_Connection
         $this->_socket = $socket;
         return $this;
     }
+    
+    public function getPhpSocket()
+    {
+        return $this->_socket->getSocket();
+    }
 
     /**
      * @param object $command Pheanstalk_Command
@@ -68,6 +75,12 @@ class Pheanstalk_Connection
      * @throws Pheanstalk_Exception_ClientException
      */
     public function dispatchCommand($command)
+    {
+        $this->sendCommand($command);
+        return $this->readResponse($command);
+    }
+    
+    public function sendCommand($command)
     {
         $socket = $this->_getSocket();
 
@@ -77,7 +90,12 @@ class Pheanstalk_Connection
             $to_send .= $command->getData().self::CRLF;
         }
 
-        $socket->write($to_send);
+        return $socket->write($to_send);
+    }
+    
+    public function readResponse($command)
+    {
+        $socket = $this->_getSocket();
 
         $responseLine = $socket->getLine();
         $responseName = preg_replace('#^(\S+).*$#s', '$1', $responseLine);
@@ -145,6 +163,30 @@ class Pheanstalk_Connection
     {
         return $this->_port;
     }
+    
+    public function setActive()
+    {
+        $this->_isActive = true;
+    }
+
+    public function setInactive()
+    {
+        $this->_isActive = false;
+    }
+    
+    public function isActive()
+    {
+        return $this->_isActive;
+    }
+    
+    public function reconnect()
+    {
+        if(isset($this->_socket))
+            $this->_socket->close();
+        
+        unset($this->_socket);
+        return $this->isServiceListening();
+    }
 
     // ----------------------------------------
 
@@ -178,6 +220,7 @@ class Pheanstalk_Connection
             $this->_getSocket();
             return true;
         } catch (Pheanstalk_Exception_ConnectionException $e) {
+            $this->setInactive();
             return false;
         }
     }

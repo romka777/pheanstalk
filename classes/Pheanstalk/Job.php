@@ -16,15 +16,17 @@ class Pheanstalk_Job
 
     private $_id;
     private $_data;
+    private $_connection;
 
     /**
      * @param int $id The job ID
      * @param string $data The job data
      */
-    public function __construct($id, $data)
+    public function __construct($id, $data, Pheanstalk_Connection $connection)
     {
         $this->_id = (int)$id;
         $this->_data = $data;
+        $this->_connection = $connection;
     }
 
     /**
@@ -43,5 +45,10 @@ class Pheanstalk_Job
     public function getData()
     {
         return $this->_data;
+    }
+    
+    public function getConnection()
+    {
+        return $this->_connection;
     }
 }

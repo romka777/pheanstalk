@@ -11,14 +11,21 @@ interface Pheanstalk_PheanstalkInterface {
      * @param Pheanstalk_Connection
      * @chainable
      */
-    public function setConnection(Pheanstalk_Connection $connection);
+    public function addConnection(Pheanstalk_Connection $connection);
 
     /**
      * The internal connection object.
      * Not required for general usage.
      * @return Pheanstalk_Connection
      */
-    public function getConnection();
+    public function getConnection($name);
+
+    /**
+     * The internal connection objects.
+     * Not required for general usage.
+     * @return Pheanstalk_Connection
+     */
+    public function getConnections();
 
     // ----------------------------------------
 
@@ -28,7 +35,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param Pheanstalk_Job $job
      * @return void
      */
-    public function bury($job, $priority = self::DEFAULT_PRIORITY);
+    public function bury(Pheanstalk_Job $job, $priority = self::DEFAULT_PRIORITY);
 
     /**
      * Permanently deletes a job.
@@ -36,7 +43,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param object $job Pheanstalk_Job
      * @chainable
      */
-    public function delete($job);
+    public function delete(Pheanstalk_Job $job);
 
     /**
      * Remove the specified tube from the watchlist.
@@ -67,7 +74,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param Pheanstalk_Job $job Pheanstalk_Job
      * @chainable
      */
-    public function kickJob($job);
+    public function kickJob(Pheanstalk_Job $job);
 
     /**
      * The names of all tubes on the server.
@@ -114,7 +121,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param int $jobId
      * @return object Pheanstalk_Job
      */
-    public function peek($jobId);
+    public function peek($jobId, $connectionName);
 
     /**
      * Inspect the next ready job in the specified tube. If no tube is
@@ -181,7 +188,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param int $delay Seconds to wait before job becomes ready
      * @chainable
      */
-    public function release($job, $priority = self::DEFAULT_PRIORITY, $delay = self::DEFAULT_DELAY);
+    public function release(Pheanstalk_Job $job, $priority = self::DEFAULT_PRIORITY, $delay = self::DEFAULT_DELAY);
 
     /**
      * Reserves/locks a ready job in a watched tube.
@@ -225,7 +232,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param Pheanstalk_Job or int $job
      * @return object
      */
-    public function statsJob($job);
+    public function statsJob(Pheanstalk_Job $job);
 
     /**
      * Gives statistical information about the specified tube if it exists.
@@ -253,7 +260,7 @@ interface Pheanstalk_PheanstalkInterface {
      * @param Pheanstalk_Job $job
      * @chainable
      */
-    public function touch($job);
+    public function touch(Pheanstalk_Job $job);
 
     /**
      * Change to the specified tube name for publishing jobs to.
