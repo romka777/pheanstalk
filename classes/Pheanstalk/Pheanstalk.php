@@ -348,51 +348,38 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
     
     public function reserveMultiSync($timeout)
     {
-        $command = new Pheanstalk_Command_ReserveCommand($timeout);
-        $sockets = array();
-        $socketsWrite = null;
-        $socketsException = null;
-        
         $falseResponses = array(
             Pheanstalk_Response::RESPONSE_DEADLINE_SOON,
             Pheanstalk_Response::RESPONSE_TIMED_OUT,
         );
-        
-        $responses = [];
+        $command = new Pheanstalk_Command_ReserveCommand($timeout);
+        $jobs = array();
 
         foreach($this->_connections as $name => $connection) {
             try{
-                $response = $connection->sendCommand($command);
-                $sockets[$name] = $connection->getPhpSocket();
-                
+                $connection->sendCommand($command);
             } catch (Pheanstalk_Exception_SocketException $e) {
                 if($this->_reconnect($connection)) {
-                    $response = $connection->sendCommand($command);
-                    $sockets[$name] = $connection->getPhpSocket();
+                    $connection->sendCommand($command);
                 } else {
                     $connection->setInactive();
                 }
             }
         }
         
-        $jobs = array();
-        while(count($sockets)) {
-            $socketsRead = $sockets;
-            $count = Pheanstalk_Socket_StreamFunctions::instance()->socket_select($socketsRead, $socketsWrite, $socketsException, null);
-            if($count < 1)
-                throw new Pheanstalk_Exception_SocketException('Select returns :'.var_export($count, true));
-            
-            foreach($socketsRead as $name => $phpSocket) {
-                $connection = $this->getConnection($name);
-
+        foreach($this->_connections as $name => $connection) {
+            try{
                 $response = $connection->readResponse($command);
-
-                unset($sockets[$name]);
-                if (in_array($response->getResponseName(), $falseResponses)) {
-//                    $jobs[$name] = false;
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                if($this->_reconnect($connection)) {
+                    $response = $connection->readResponse($command);
                 } else {
-                    $jobs[] = new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
+                    $connection->setInactive();
+                    continue;
                 }
+            }
+            if(!in_array($response->getResponseName(), $falseResponses)) {
+                $jobs[] = new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
             }
         }
         

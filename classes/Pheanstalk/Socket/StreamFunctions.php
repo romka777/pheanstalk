@@ -42,63 +42,48 @@ class Pheanstalk_Socket_StreamFunctions
 
     // ----------------------------------------
 
-    public function fgets($handle, $length = 1048576)
+    public function feof($handle)
     {
-        return socket_read($handle, $length, PHP_NORMAL_READ);
+        return feof($handle);
+    }
+
+    public function fgets($handle, $length = null)
+    {
+        if (isset($length)) {
+            return fgets($handle, $length);
+        } else {
+            return fgets($handle);
+        }
+    }
+
+    public function fopen($filename, $mode)
+    {
+        return fopen($filename, $mode);
     }
 
     public function fread($handle, $length)
     {
-        return socket_read($handle, $length, PHP_BINARY_READ);
+        return fread($handle, $length);
     }
 
     public function fsockopen($hostname, $port = -1, &$errno = null, &$errstr = null, $timeout = null)
     {
-        $sock = @socket_create(AF_INET, SOCK_STREAM, SOL_TCP);
-        if(!$sock) {
-            $errno = socket_last_error();
-            $errstr = socket_strerror($errno);
-            return false;
-        }
-        
-        if(!socket_connect($sock, $hostname, $port)) {
-            $errno = socket_last_error($sock);
-            $errstr = socket_strerror($errno);
-            return false;
-        }
-        
-        return $sock;
+        // Warnings (e.g. connection refused) suppressed;
+        // return value, $errno and $errstr should be checked instead.
+        return @fsockopen($hostname, $port, $errno, $errstr, $timeout);
     }
 
     public function fwrite($handle, $string, $length = null)
     {
         if (isset($length)) {
-            return socket_write($handle, $string, $length);
+            return fwrite($handle, $string, $length);
         } else {
-            return socket_write($handle, $string);
+            return fwrite($handle, $string);
         }
     }
 
     public function stream_set_timeout($stream, $seconds, $microseconds = 0)
     {
-        socket_set_option($stream, SOL_SOCKET, SO_RCVTIMEO, array('sec' => $seconds, 'usec' => $microseconds));
-        socket_set_option($stream, SOL_SOCKET, SO_SNDTIMEO, array('sec'=> $seconds, 'usec' => $microseconds));
-        
-        return true;
-    }
-    
-    public function stream_set_blocking($stream, $mode)
-    {
-        return stream_set_blocking($stream, $mode);
-    }
-    
-    public function fclose($handle)
-    {
-        return socket_close($handle);
-    }
-    
-    public function socket_select(&$read, &$write, &$except, $tv_sec, $tv_usec = 0)
-    {
-        return socket_select($read, $write, $except, $tv_sec, $tv_usec = 0);
+        return stream_set_timeout($stream, $seconds, $microseconds);
     }
 }

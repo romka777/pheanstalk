@@ -64,11 +64,6 @@ class Pheanstalk_Connection
         return $this;
     }
     
-    public function getPhpSocket()
-    {
-        return $this->_socket->getSocket();
-    }
-
     /**
      * @param object $command Pheanstalk_Command
      * @return object Pheanstalk_Response
