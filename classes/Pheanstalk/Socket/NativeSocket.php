@@ -9,6 +9,8 @@
  */
 class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
 {
+    private static $stream;
+    
     /**
      * The default timeout for a blocking read on the socket
      */
@@ -110,6 +112,9 @@ class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
      */
     private function _wrapper()
     {
-        return Pheanstalk_Socket_StreamFunctions::instance();
+        if(is_null(self::$stream))
+            self::$stream = Pheanstalk_Socket_StreamFunctions::instance();
+        
+        return self::$stream;
     }
 }
