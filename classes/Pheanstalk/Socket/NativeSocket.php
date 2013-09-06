@@ -103,6 +103,11 @@ class Pheanstalk_Socket_NativeSocket implements Pheanstalk_Socket
 
         return rtrim($data);
     }
+    
+    public function close()
+    {
+        return $this->_wrapper()->fclose($this->_socket);
+    }
 
     // ----------------------------------------
 

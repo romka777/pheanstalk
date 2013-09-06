@@ -36,7 +36,7 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     public function addConnection(Pheanstalk_Connection $connection)
     {
-        $name = $connection->getHost().':'.$connection->getPort();
+        $name = $connection->getName();
         $this->_connections[$name] = $connection;
         
         return $name;
@@ -87,7 +87,11 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
             unset($this->_watching[$tube]);
             $connections = $this->getConnections();
             foreach($connections as $connection) {
-                $this->_dispatch(new Pheanstalk_Command_IgnoreCommand($tube), $connection);
+                try {
+                    $this->_dispatch(new Pheanstalk_Command_IgnoreCommand($tube), $connection);
+                } catch (Pheanstalk_Exception_SocketException $e) {
+                    
+                }
             }
         }
         return $this;
@@ -283,11 +287,16 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         $ttr = Pheanstalk_PheanstalkInterface::DEFAULT_TTR
     )
     {
-        $connection = $this->_getConnection();
 
-        $response = $this->_dispatch(new Pheanstalk_Command_PutCommand($data, $priority, $delay, $ttr), $connection);
-
-        return $response['id'];
+        while(true) {
+            try {
+                $connection = $this->_getConnection();
+                $response = $this->_dispatch(new Pheanstalk_Command_PutCommand($data, $priority, $delay, $ttr), $connection);
+                return $response['id'];
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                continue;
+            }
+        }
     }
 
     /**
@@ -357,30 +366,41 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         );
         $command = new Pheanstalk_Command_ReserveCommand($timeout);
         $jobs = array();
+        $isAvaibleConnections = false;
 
         foreach($this->_connections as $name => $connection) {
-            try{
-                $connection->sendCommand($command);
-            } catch (Pheanstalk_Exception_SocketException $e) {
-                if($this->_reconnect($connection)) {
-                    $connection->sendCommand($command);
-                } else {
-                    $connection->setInactive();
-                }
-            }
-        }
-        
-        foreach($this->_connections as $name => $connection) {
-            try{
-                $response = $connection->readResponse($command);
-            } catch (Pheanstalk_Exception_SocketException $e) {
-                if($this->_reconnect($connection)) {
-                    $response = $connection->readResponse($command);
-                } else {
-                    $connection->setInactive();
+
+            if(!$connection->isActive()) {
+                if($connection->getNextReconnect() > time()) {
+                    continue;
+                } elseif(!$this->_reconnect($connection)) {
                     continue;
                 }
             }
+
+            try{
+                $connection->sendCommand($command);
+                $isAvaibleConnections = true;
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                $connection->setInactive();
+            }
+        }
+        
+        if(!$isAvaibleConnections)
+            throw new Pheanstalk_Exception('All connections down');
+        
+        foreach($this->_connections as $name => $connection) {
+            if(!$connection->isActive()) {
+                continue;
+            }
+            
+            try{
+                $response = $connection->readResponse($command);
+            } catch (Pheanstalk_Exception_SocketException $e) {
+                $connection->setInactive();
+                continue;
+            }
+
             if(!in_array($response->getResponseName(), $falseResponses)) {
                 $jobs[] = new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
             }
@@ -490,7 +510,7 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
                 try {
                     $this->_dispatch(new Pheanstalk_Command_WatchCommand($tube), $connection);
                 } catch (Pheanstalk_Exception_SocketException $e) {
-                    
+
                 }
             }
         }
@@ -524,12 +544,20 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         shuffle($keys);
 //        DebugBreak('1@localhost');
         foreach($keys as $key) {
-            if($this->_connections[$key]->isActive() AND $this->_connections[$key]->isServiceListening()) {
-                return $this->_connections[$key];
+            $connection = $this->_connections[$key];
+            
+            // if connection is not actived, try to reconnect every 10 sec
+            if(!$connection->isActive()) {
+                if($connection->getNextReconnect() > time()) {
+                    continue;
+                } elseif(!$this->_reconnect($connection)) {
+                    continue;
+                }
             }
+            return $connection;
         }
         
-        throw new Pheanstalk_Exception_SocketException('All connections down');
+        throw new Pheanstalk_Exception('All connections down');
     }
 
 
@@ -544,6 +572,10 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
      */
     private function _dispatch(Pheanstalk_Command $command, Pheanstalk_Connection $connection)
     {
+        if(!$connection->isActive()) {
+            
+        }
+        
         try {
             $response = $connection->dispatchCommand($command);
         } catch (Pheanstalk_Exception_SocketException $e) {

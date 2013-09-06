@@ -12,6 +12,7 @@ class Pheanstalk_Connection
     const CRLF = "\r\n";
     const CRLF_LENGTH = 2;
     const DEFAULT_CONNECT_TIMEOUT = 2;
+    const RECONNECT_TIMEOUT = 10;
 
     // responses which are global errors, mapped to their exception short-names
     private static $_errorResponses = array(
@@ -33,8 +34,10 @@ class Pheanstalk_Connection
     private $_hostname;
     private $_port;
     private $_connectTimeout;
+    private $_name;
     
     private $_isActive = true;
+    private $_nextReconnect = 0;
 
     /**
      * @param string $hostname
@@ -50,6 +53,12 @@ class Pheanstalk_Connection
         $this->_hostname = $hostname;
         $this->_port = $port;
         $this->_connectTimeout = $connectTimeout;
+        $this->_name = $hostname.':'.$port;
+    }
+    
+    public function getName()
+    {
+        return $this->_name;
     }
 
     /**
@@ -162,11 +171,13 @@ class Pheanstalk_Connection
     public function setActive()
     {
         $this->_isActive = true;
+        $this->_nextReconnect = 0;
     }
 
     public function setInactive()
     {
         $this->_isActive = false;
+        $this->_nextReconnect = time() + self::RECONNECT_TIMEOUT;
     }
     
     public function isActive()
@@ -174,12 +185,18 @@ class Pheanstalk_Connection
         return $this->_isActive;
     }
     
+    public function getNextReconnect()
+    {
+        return $this->_nextReconnect;
+    }
+    
     public function reconnect()
     {
-        if(isset($this->_socket))
+        if(isset($this->_socket)) {
             $this->_socket->close();
+            unset($this->_socket);
+        }
         
-        unset($this->_socket);
         return $this->isServiceListening();
     }
 
@@ -213,6 +230,7 @@ class Pheanstalk_Connection
     {
         try {
             $this->_getSocket();
+            $this->setActive();
             return true;
         } catch (Pheanstalk_Exception_ConnectionException $e) {
             $this->setInactive();

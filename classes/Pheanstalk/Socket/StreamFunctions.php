@@ -86,4 +86,9 @@ class Pheanstalk_Socket_StreamFunctions
     {
         return stream_set_timeout($stream, $seconds, $microseconds);
     }
+    
+    public function fclose($handle)
+    {
+        return fclose($handle);
+    }
 }
