@@ -134,7 +134,7 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         $connections = $this->getConnections();
         foreach($connections as $name => $connection) {
             try {
-                $list[$name] = (array) $this->_dispatch(new Pheanstalk_Command_ListTubesCommand(), $connection);
+                $list = array_merge($list, (array) $this->_dispatch(new Pheanstalk_Command_ListTubesCommand(), $connection));
             } catch (Pheanstalk_Exception_SocketException $e) {
                 
             }
