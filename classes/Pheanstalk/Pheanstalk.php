@@ -448,6 +448,26 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
 
     }
 
+    public function statsTubeSummary($tube)
+    {
+        
+        $summary = array();
+        $connections = $this->getConnections();
+        foreach($connections as $name => $connection) {
+            $stats = $this->statsTube($tube, $connection->getName());
+            
+            foreach($stats as $name => $value) {
+                if(!isset($summary[$name]))
+                    $summary[$name] = 0;
+                
+                $summary[$name] += $value;
+            }
+        }
+
+        return $summary;
+
+    }
+
     /**
      * {@inheritDoc}
      */
