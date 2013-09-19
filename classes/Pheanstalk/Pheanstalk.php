@@ -358,6 +358,9 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
         return $reservedJob;
     }
     
+    /**
+     * {@inheritDoc}
+     */
     public function reserveMultiSync($timeout)
     {
         $falseResponses = array(
