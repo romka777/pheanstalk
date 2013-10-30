@@ -255,7 +255,7 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
 
         $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_DELAYED), $connection);
 
-        return new Pheanstalk_Job($response['id'], $response['jobdata']);
+        return new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
     }
 
     /**
@@ -274,7 +274,7 @@ class Pheanstalk_Pheanstalk implements Pheanstalk_PheanstalkInterface
 
         $response = $this->_dispatch(new Pheanstalk_Command_PeekCommand(Pheanstalk_Command_PeekCommand::TYPE_BURIED), $connection);
 
-        return new Pheanstalk_Job($response['id'], $response['jobdata']);
+        return new Pheanstalk_Job($response['id'], $response['jobdata'], $connection);
     }
 
     /**
