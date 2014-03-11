@@ -61,6 +61,11 @@ class Pheanstalk_Connection
         return $this->_name;
     }
 
+    public function setName($name)
+    {
+        return $this->_name = $name;
+    }
+
     /**
      * Sets a manually created socket, used for unit testing.
      *
